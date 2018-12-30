@@ -3,7 +3,7 @@ FROM alpine:3.8
 WORKDIR /root/
 
 RUN apk add --force-refresh curl ca-certificates && \
-    curl -SLO  https://github.com/alexellis/inlets/releases/download/0.2/inlets && \
+    curl -SLO  https://github.com/alexellis/inlets/releases/download/0.2.1/inlets && \
     chmod +x inlets && \
     apk del curl
 
