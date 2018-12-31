@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/gorilla/websocket"
 )
@@ -22,16 +23,40 @@ type Args struct {
 
 var client *http.Client
 
+func buildUpstreamMap(args string) map[string]string {
+	items := make(map[string]string)
+
+	entries := strings.Split(args, ",")
+	for _, entry := range entries {
+		kvp := strings.Split(entry, "=")
+		if len(kvp) == 1 {
+			items[""] = strings.TrimSpace(kvp[0])
+		} else {
+			items[strings.TrimSpace(kvp[0])] = strings.TrimSpace(kvp[1])
+		}
+	}
+	return items
+}
 func main() {
 	args := Args{}
 	flag.IntVar(&args.Port, "port", 8000, "port for server")
 	flag.BoolVar(&args.Server, "server", true, "server or client")
 	flag.StringVar(&args.Remote, "remote", "127.0.0.1:8000", " server address i.e. 127.0.0.1:8000")
-	flag.StringVar(&args.Upstream, "upstream", "http://127.0.0.1:3000", "upstream server i.e. http://127.0.0.1:3000")
+	flag.StringVar(&args.Upstream, "upstream", "", "upstream server i.e. http://127.0.0.1:3000")
 
 	flag.Parse()
 
-	log.Printf("Upstream: %s", args.Upstream)
+	if len(args.Upstream) == 0 {
+		log.Printf("give --upstream\n")
+		return
+	}
+
+	upstreamMap := buildUpstreamMap(args.Upstream)
+	fmt.Printf("%v\n", upstreamMap)
+
+	for key, val := range upstreamMap {
+		log.Printf("Upstream: %s => %s\n", key, val)
+	}
 
 	client = http.DefaultClient
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
@@ -41,72 +66,97 @@ func main() {
 	if args.Server {
 		startServer(args)
 	} else {
-		runClient(args)
+		runClient(args, upstreamMap)
 	}
 }
 
-func runClient(args Args) {
+func runClient(args Args, upstreamMap map[string]string) {
 
 	u := url.URL{Scheme: "ws", Host: args.Remote, Path: "/ws"}
 	log.Printf("connecting to %s", u.String())
 
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	ws, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(c.LocalAddr())
 
-	defer c.Close()
+	fmt.Println(ws.LocalAddr())
+
+	defer ws.Close()
 
 	done := make(chan struct{})
 
 	go func() {
 		defer close(done)
 		for {
-			_, message, err := c.ReadMessage()
+			messageType, message, err := ws.ReadMessage()
 			if err != nil {
 				log.Println("read:", err)
 				return
 			}
 
-			// proxyToUpstream
-			log.Printf("recv: %d", len(message))
-			buf := bytes.NewBuffer(message)
-			bufReader := bufio.NewReader(buf)
-			req, _ := http.ReadRequest(bufReader)
-			fmt.Println("RequestURI", req.RequestURI)
+			switch messageType {
+			case websocket.TextMessage:
+				log.Printf("TextMessage: %s\n", message)
 
-			body, _ := ioutil.ReadAll(req.Body)
+				break
+			case websocket.BinaryMessage:
 
-			newReq, _ := http.NewRequest(req.Method, fmt.Sprintf("http://%s%s", req.Host, req.URL.String()), bytes.NewReader(body))
+				// proxyToUpstream
+				log.Printf("recv: %d", len(message))
 
-			copyHeaders(newReq.Header, &req.Header)
-
-			res, resErr := client.Do(newReq)
-
-			if resErr != nil {
-				log.Println(resErr)
-			} else {
-				log.Printf("Upstream tunnel res: %s\n", res.Status)
-
-				buf2 := new(bytes.Buffer)
-
-				res.Write(buf2)
-				if res.Body != nil {
-					defer res.Body.Close()
+				buf := bytes.NewBuffer(message)
+				bufReader := bufio.NewReader(buf)
+				req, readReqErr := http.ReadRequest(bufReader)
+				if readReqErr != nil {
+					log.Println(readReqErr)
+					return
 				}
-				fmt.Println("Whole response", buf2.Len())
 
-				c.WriteMessage(websocket.TextMessage, buf2.Bytes())
+				fmt.Println("RequestURI", req.RequestURI)
+
+				body, _ := ioutil.ReadAll(req.Body)
+
+				proxyHost := ""
+				if val, ok := upstreamMap[req.Host]; ok {
+					proxyHost = val
+				} else if val, ok := upstreamMap[""]; ok {
+					proxyHost = val
+				}
+
+				newReq, _ := http.NewRequest(req.Method, fmt.Sprintf("%s%s", proxyHost, req.URL.String()), bytes.NewReader(body))
+
+				copyHeaders(newReq.Header, &req.Header)
+
+				res, resErr := client.Do(newReq)
+
+				if resErr != nil {
+					log.Println(resErr)
+				} else {
+					log.Printf("Upstream tunnel res: %s\n", res.Status)
+
+					buf2 := new(bytes.Buffer)
+
+					res.Write(buf2)
+					if res.Body != nil {
+						defer res.Body.Close()
+					}
+
+					fmt.Println("Whole response", buf2.Len())
+
+					ws.WriteMessage(websocket.BinaryMessage, buf2.Bytes())
+				}
+				break
 			}
+
 		}
 	}()
 
 	<-done
 }
 
-func proxyHandler(msg chan *http.Response, outgoing chan *http.Request, upstream string) func(w http.ResponseWriter, r *http.Request) {
+func proxyHandler(msg chan *http.Response, outgoing chan *http.Request) func(w http.ResponseWriter, r *http.Request) {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Reverse proxy", r.Host, r.Method, r.URL.String())
@@ -116,8 +166,9 @@ func proxyHandler(msg chan *http.Response, outgoing chan *http.Request, upstream
 		}
 
 		body, _ := ioutil.ReadAll(r.Body)
+		// fmt.Println("RequestURI/Host", r.RequestURI, r.Host)
 
-		req, _ := http.NewRequest(r.Method, fmt.Sprintf("%s%s", upstream, r.URL.Path),
+		req, _ := http.NewRequest(r.Method, fmt.Sprintf("http://%s%s", r.Host, r.URL.Path),
 			bytes.NewReader(body))
 
 		copyHeaders(req.Header, &r.Header)
@@ -151,7 +202,7 @@ func startServer(args Args) {
 	ch := make(chan *http.Response)
 	outgoing := make(chan *http.Request)
 	http.HandleFunc("/ws", serveWs(ch, outgoing))
-	http.HandleFunc("/", proxyHandler(ch, outgoing, args.Upstream))
+	http.HandleFunc("/", proxyHandler(ch, outgoing))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", args.Port), nil); err != nil {
 		log.Fatal(err)
 	}
@@ -187,14 +238,14 @@ func serveWs(msg chan *http.Response, outgoing chan *http.Request) func(w http.R
 				}
 
 				if msgType == websocket.TextMessage {
+					log.Println("TextMessage: ", message)
+				} else if msgType == websocket.BinaryMessage {
 					// log.Printf("Server recv: %s", message)
 
 					reader := bytes.NewReader(message)
 					scanner := bufio.NewReader(reader)
 					res, _ := http.ReadResponse(scanner, nil)
-					// log.Println(res, resErr)
 
-					// body, _ := ioutil.ReadAll(res.Body)
 					msg <- res
 				}
 			}
@@ -210,7 +261,7 @@ func serveWs(msg chan *http.Response, outgoing chan *http.Request) func(w http.R
 
 				outboundRequest.Write(buf)
 
-				ws.WriteMessage(websocket.TextMessage, buf.Bytes())
+				ws.WriteMessage(websocket.BinaryMessage, buf.Bytes())
 			}
 
 		}()
