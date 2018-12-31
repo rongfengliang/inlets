@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/twinj/uuid"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -62,10 +64,9 @@ func main() {
 	}
 
 	args.GatewayTimeout = gatewayTimeout
+	log.Printf("Gateway timeout: %f secs\n", gatewayTimeout.Seconds())
 
 	upstreamMap := buildUpstreamMap(args.Upstream)
-	fmt.Printf("%v\n", upstreamMap)
-
 	for key, val := range upstreamMap {
 		log.Printf("Upstream: %s => %s\n", key, val)
 	}
@@ -115,8 +116,10 @@ func runClient(args Args, upstreamMap map[string]string) {
 				break
 			case websocket.BinaryMessage:
 
+				requestID := uuid.Formatter(uuid.NewV4(), uuid.FormatHex)
+
 				// proxyToUpstream
-				log.Printf("recv: %d", len(message))
+				log.Printf("[%s] recv: %d", requestID, len(message))
 
 				buf := bytes.NewBuffer(message)
 				bufReader := bufio.NewReader(buf)
@@ -125,8 +128,7 @@ func runClient(args Args, upstreamMap map[string]string) {
 					log.Println(readReqErr)
 					return
 				}
-
-				fmt.Println("RequestURI", req.RequestURI)
+				log.Printf("[%s] %s", requestID, req.RequestURI)
 
 				body, _ := ioutil.ReadAll(req.Body)
 
@@ -138,10 +140,11 @@ func runClient(args Args, upstreamMap map[string]string) {
 				}
 				requestURI := fmt.Sprintf("%s%s", proxyHost, req.URL.String())
 
-				fmt.Println("proxy requestURI", requestURI)
+				log.Printf("[%s] proxy => %s", requestID, requestURI)
+
 				newReq, newReqErr := http.NewRequest(req.Method, requestURI, bytes.NewReader(body))
 				if newReqErr != nil {
-					log.Println("newReqErr", newReqErr)
+					log.Printf("[%s] newReqErr: %s", requestID, newReqErr.Error())
 					return
 				}
 
@@ -150,9 +153,23 @@ func runClient(args Args, upstreamMap map[string]string) {
 				res, resErr := client.Do(newReq)
 
 				if resErr != nil {
-					log.Println(resErr)
+					log.Printf("[%s] Upstream tunnel err: %s", requestID, resErr.Error())
+
+					errRes := http.Response{
+						StatusCode: http.StatusBadGateway,
+						Body:       ioutil.NopCloser(strings.NewReader(resErr.Error())),
+					}
+
+					buf2 := new(bytes.Buffer)
+					errRes.Write(buf2)
+					if errRes.Body != nil {
+						defer errRes.Body.Close()
+					}
+
+					ws.WriteMessage(websocket.BinaryMessage, buf2.Bytes())
+
 				} else {
-					log.Printf("Upstream tunnel res: %s\n", res.Status)
+					log.Printf("[%s] tunnel res.Status => %s", requestID, res.Status)
 
 					buf2 := new(bytes.Buffer)
 
@@ -161,7 +178,7 @@ func runClient(args Args, upstreamMap map[string]string) {
 						defer res.Body.Close()
 					}
 
-					fmt.Println("Whole response", buf2.Len())
+					log.Printf("[%s] %d bytes", requestID, buf2.Len())
 
 					ws.WriteMessage(websocket.BinaryMessage, buf2.Bytes())
 				}
@@ -196,7 +213,6 @@ func proxyHandler(msg chan *http.Response, outgoing chan *http.Request, gatewayT
 		log.Println("waiting for response")
 
 		cancel := make(chan bool)
-		gatewayTimeout := time.Second * 5
 
 		timeout := time.AfterFunc(gatewayTimeout, func() {
 			cancel <- true
@@ -291,7 +307,7 @@ func serveWs(msg chan *http.Response, outgoing chan *http.Request) func(w http.R
 			for {
 				fmt.Println("wait for outboundRequest")
 				outboundRequest := <-outgoing
-				// fmt.Println("outboundRequest", outboundRequest)
+
 				buf := new(bytes.Buffer)
 
 				outboundRequest.Write(buf)

@@ -9,9 +9,20 @@
   revision = "66b9c49e59c6c48f0ffce28c2d8b8a5678502c6d"
   version = "v1.4.0"
 
+[[projects]]
+  digest = "1:8f41bbca0d6435bb54d7c090336f7693942cda30f9126eaf3959b8df48721ac3"
+  name = "github.com/twinj/uuid"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "835a10bbd6bce40820349a68b1368a62c3c5617c"
+  version = "v1.0.0"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  input-imports = ["github.com/gorilla/websocket"]
+  input-imports = [
+    "github.com/gorilla/websocket",
+    "github.com/twinj/uuid",
+  ]
   solver-name = "gps-cdcl"
   solver-version = 1
