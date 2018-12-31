@@ -16,10 +16,12 @@ import (
 )
 
 type Args struct {
-	Port     int
-	Server   bool
-	Remote   string
-	Upstream string
+	Port              int
+	Server            bool
+	Remote            string
+	Upstream          string
+	GatewayTimeoutRaw string
+	GatewayTimeout    time.Duration
 }
 
 var client *http.Client
@@ -44,6 +46,7 @@ func main() {
 	flag.BoolVar(&args.Server, "server", true, "server or client")
 	flag.StringVar(&args.Remote, "remote", "127.0.0.1:8000", " server address i.e. 127.0.0.1:8000")
 	flag.StringVar(&args.Upstream, "upstream", "", "upstream server i.e. http://127.0.0.1:3000")
+	flag.StringVar(&args.GatewayTimeoutRaw, "gateway-timeout", "5s", "timeout for upstream gateway")
 
 	flag.Parse()
 
@@ -51,6 +54,14 @@ func main() {
 		log.Printf("give --upstream\n")
 		return
 	}
+
+	gatewayTimeout, gatewayTimeoutErr := time.ParseDuration(args.GatewayTimeoutRaw)
+	if gatewayTimeoutErr != nil {
+		fmt.Printf("%s\n", gatewayTimeoutErr)
+		return
+	}
+
+	args.GatewayTimeout = gatewayTimeout
 
 	upstreamMap := buildUpstreamMap(args.Upstream)
 	fmt.Printf("%v\n", upstreamMap)
@@ -163,7 +174,7 @@ func runClient(args Args, upstreamMap map[string]string) {
 	<-done
 }
 
-func proxyHandler(msg chan *http.Response, outgoing chan *http.Request) func(w http.ResponseWriter, r *http.Request) {
+func proxyHandler(msg chan *http.Response, outgoing chan *http.Request, gatewayTimeout time.Duration) func(w http.ResponseWriter, r *http.Request) {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Reverse proxy", r.Host, r.Method, r.URL.String())
@@ -185,9 +196,9 @@ func proxyHandler(msg chan *http.Response, outgoing chan *http.Request) func(w h
 		log.Println("waiting for response")
 
 		cancel := make(chan bool)
-		timeoutSecs := time.Second * 1
+		gatewayTimeout := time.Second * 5
 
-		timeout := time.AfterFunc(timeoutSecs, func() {
+		timeout := time.AfterFunc(gatewayTimeout, func() {
 			cancel <- true
 		})
 
@@ -204,7 +215,7 @@ func proxyHandler(msg chan *http.Response, outgoing chan *http.Request) func(w h
 			w.Write(innerBody)
 			break
 		case <-cancel:
-			log.Printf("Cancelled due to timeout after %f secs\n", timeoutSecs.Seconds())
+			log.Printf("Cancelled due to timeout after %f secs\n", gatewayTimeout.Seconds())
 
 			w.WriteHeader(http.StatusGatewayTimeout)
 			break
@@ -222,10 +233,11 @@ func copyHeaders(destination http.Header, source *http.Header) {
 }
 
 func startServer(args Args) {
+
 	ch := make(chan *http.Response)
 	outgoing := make(chan *http.Request)
 	http.HandleFunc("/ws", serveWs(ch, outgoing))
-	http.HandleFunc("/", proxyHandler(ch, outgoing))
+	http.HandleFunc("/", proxyHandler(ch, outgoing, args.GatewayTimeout))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", args.Port), nil); err != nil {
 		log.Fatal(err)
 	}
