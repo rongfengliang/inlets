@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -124,8 +125,14 @@ func runClient(args Args, upstreamMap map[string]string) {
 				} else if val, ok := upstreamMap[""]; ok {
 					proxyHost = val
 				}
+				requestURI := fmt.Sprintf("%s%s", proxyHost, req.URL.String())
 
-				newReq, _ := http.NewRequest(req.Method, fmt.Sprintf("%s%s", proxyHost, req.URL.String()), bytes.NewReader(body))
+				fmt.Println("proxy requestURI", requestURI)
+				newReq, newReqErr := http.NewRequest(req.Method, requestURI, bytes.NewReader(body))
+				if newReqErr != nil {
+					log.Println("newReqErr", newReqErr)
+					return
+				}
 
 				copyHeaders(newReq.Header, &req.Header)
 
@@ -173,20 +180,36 @@ func proxyHandler(msg chan *http.Response, outgoing chan *http.Request) func(w h
 
 		copyHeaders(req.Header, &r.Header)
 
-		// log.Printf("Request to tunnel: %s\n", string(body))
 		outgoing <- req
 
 		log.Println("waiting for response")
 
-		res := <-msg
+		cancel := make(chan bool)
+		timeoutSecs := time.Second * 1
 
-		log.Println("writing response from tunnel", res.ContentLength)
+		timeout := time.AfterFunc(timeoutSecs, func() {
+			cancel <- true
+		})
 
-		innerBody, _ := ioutil.ReadAll(res.Body)
+		select {
+		case res := <-msg:
+			timeout.Stop()
 
-		copyHeaders(w.Header(), &res.Header)
-		w.WriteHeader(res.StatusCode)
-		w.Write(innerBody)
+			log.Println("writing response from tunnel", res.ContentLength)
+
+			innerBody, _ := ioutil.ReadAll(res.Body)
+
+			copyHeaders(w.Header(), &res.Header)
+			w.WriteHeader(res.StatusCode)
+			w.Write(innerBody)
+			break
+		case <-cancel:
+			log.Printf("Cancelled due to timeout after %f secs\n", timeoutSecs.Seconds())
+
+			w.WriteHeader(http.StatusGatewayTimeout)
+			break
+		}
+
 	}
 }
 
