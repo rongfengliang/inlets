@@ -58,7 +58,8 @@ Start the tunnel server on a machine with a publicly-accessible IPv4 IP address 
 go get -u github.com/alexellis/inlets
 cd $GOPATH/src/github.com/alexellis/inlets
 
-go run main.go -server=true -port=80 -upstream=http://127.0.0.1:3000
+go build
+./inlets -server=true -port=80
 ```
 
 Note down your public IPv4 IP address i.e. 192.168.0.101
@@ -82,10 +83,16 @@ Start the tunnel client
 go get -u github.com/alexellis/inlets
 cd $GOPATH/src/github.com/alexellis/inlets
 
-go run main.go -server=false -remote=192.168.0.101:80 -upstream=http://127.0.0.1:3000
+./inlets -server=false -remote=192.168.0.101:80 -upstream=http://127.0.0.1:3000
 ```
 
 Finally with an example server running and a tunnel server and a tunnel client send a request to the public IP address i.e.:
+
+You can also map to a DNS Host:
+
+```
+./inlets -server=false -remote=192.168.0.101:80 -upstream  "gateway.mydomain.tk=http://127.0.0.1:3000"
+```
 
 ```
 curl -d "hash this" http://192.168.0.101/hash
@@ -143,7 +150,7 @@ spec:
     spec:
       containers:
       - name: inlets
-        image: alexellis2/inlets-runtime:0.2.1
+        image: alexellis2/inlets-runtime:0.3.0
         imagePullPolicy: Always
         command: ["./inlets"]
         args:
