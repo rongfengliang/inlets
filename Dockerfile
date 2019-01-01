@@ -2,8 +2,9 @@ FROM golang:1.10.4 as build
 
 WORKDIR /go/src/github.com/alexellis/inlets
 
-COPY vendor     vendor
-COPY main.go  .
+COPY vendor             vendor
+COPY main.go            .
+COPY parse_upstream.go  .
 
 RUN CGO_ENABLED=0 go build -a -installsuffix cgo --ldflags "-s -w" -o /usr/bin/inlets
 
