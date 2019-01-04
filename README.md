@@ -39,8 +39,8 @@ Unlike HTTP 1.1 which follows a synchronous request/response model websockets us
 
 * There is currently no authentication on the server component
 * The default configuration uses websockets without SSL `ws://`, but to enable encryption you could enable SSL `wss://`
-* There is no timeout for when the tunnel is disconnected
-* The upstream URL has to be configured on both server and client until a discovery or service advertisement mechanism is added
+* ~~There is no timeout for when the tunnel is disconnected~~ timeout can be configured via args on the server
+* ~~The upstream URL has to be configured on both server and client until a discovery or service advertisement mechanism is added~~ advertise on the client
 
 Contributions are welcome. All commits must be signed-off with `git commit -s` to accept the [Developer Certificate of Origin](https://developercertificate.org).
 
@@ -54,7 +54,7 @@ You will need Golang 1.10 or 1.11 on both the exit-node or server and the client
 
 Start the tunnel server on a machine with a publicly-accessible IPv4 IP address such as a VPS.
 
-```
+```bash
 go get -u github.com/alexellis/inlets
 cd $GOPATH/src/github.com/alexellis/inlets
 
@@ -136,7 +136,7 @@ while [ true ] ; do sleep 5 && ./inlets -server=true -upstream=http://192.168.0.
 
 You can even run `inlets` within your Kubernetes in Docker (kind) cluster to get ingress (incoming network) for your services such as the OpenFaaS gateway:
 
-```
+```yaml
 apiVersion: apps/v1beta1 # for versions before 1.6.0 use extensions/v1beta1
 kind: Deployment
 metadata:
@@ -170,5 +170,3 @@ The cheapest option is probably Scaleway at 1.99 EUR / month using the "1-XS" fr
 You can get a free domain-name with a .tk / .ml or .ga TLD from https://www.freenom.com - make sure the domain has at least 4 letters to get it for free. You can also get various other domains starting as cheap as 1-2USD from https://www.namecheap.com
 
 Namecheap provides wildcard TLS out of the box, but freenom only provides root/naked domain and a list of sub-domains. Domains from both providers can be moved to alternative nameservers for use with AWS Route 53 or Google Cloud DNS - this then enables wildcard DNS and the ability to get a wildcard TLS certificate from LetsEncrypt.
-
-
