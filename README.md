@@ -39,7 +39,7 @@ Non-goals:
 
 Unlike HTTP 1.1 which follows a synchronous request/response model websockets use an asynchronous pub/sub model for sending and receiving messages. This presents a challenge for tunneling a synchronous protocol over an asynchronous bus. This is a working prototype that can be used for testing, development and to generate discussion, but is not production-ready.
 
-* There is currently no authentication on the server component
+* ~~There is currently no authentication on the server component~~ The tunnel link is secured via `-token` flag and a shared secret
 * The default configuration uses websockets without SSL `ws://`, but to enable encryption you could enable SSL `wss://`
 * ~~There is no timeout for when the tunnel is disconnected~~ timeout can be configured via args on the server
 * ~~The upstream URL has to be configured on both server and client until a discovery or service advertisement mechanism is added~~ advertise on the client
@@ -56,6 +56,14 @@ Start the tunnel server on a machine with a publicly-accessible IPv4 IP address 
 
 ```bash
 ./inlets -server=true -port=80
+```
+
+> Note: You can pass the `-token` argument followed by a token value to both the server and client to prevent authorization connections to the tunnel.
+
+Example with token:
+
+```bash
+token=$(head -c 16 /dev/urandom | shasum | cut -d" " -f1); ./inlets -server=true -port=8090 -token="$token"
 ```
 
 Note down your public IPv4 IP address i.e. 192.168.0.101
