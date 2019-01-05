@@ -44,33 +44,27 @@ Unlike HTTP 1.1 which follows a synchronous request/response model websockets us
 * ~~There is no timeout for when the tunnel is disconnected~~ timeout can be configured via args on the server
 * ~~The upstream URL has to be configured on both server and client until a discovery or service advertisement mechanism is added~~ advertise on the client
 
-Contributions are welcome. All commits must be signed-off with `git commit -s` to accept the [Developer Certificate of Origin](https://developercertificate.org).
-
 Binaries for Linux, Darwin (MacOS) and armhf are made available via the [releases page](https://github.com/alexellis/inlets/releases)
 
 ## Test it out
 
-You can get a binary release from the [releases pages](https://github.com/alexellis/inlets/releases) and skip the installation of Go locally on both systems.
-
-For development you will need Golang 1.10 or 1.11 on both the exit-node or server and the client.
+You can get a binary release from the [releases pages](https://github.com/alexellis/inlets/releases) and skip the installation of Go.
 
 * On the server or exit-node
 
 Start the tunnel server on a machine with a publicly-accessible IPv4 IP address such as a VPS.
 
 ```bash
-go get -u github.com/alexellis/inlets
-cd $GOPATH/src/github.com/alexellis/inlets
-
-go build
 ./inlets -server=true -port=80
 ```
 
 Note down your public IPv4 IP address i.e. 192.168.0.101
 
-* On your dev machine start an example service
+* On your machine behind the firewall start an example service that you want to expose to the Internet
 
-This service generates hashes and is an example we want to share online
+You can use my hash-browns service for instance which generates hashes.
+
+Install hash-browns or run your own HTTP server
 
 ```
 go get -u github.com/alexellis/hash-browns
@@ -79,27 +73,32 @@ cd $GOPATH/src/github.com/alexellis/hash-browns
 port=3000 go run server.go 
 ```
 
-* On your dev machine
+* On your machine behind the firewall
 
 Start the tunnel client
 
 ```
-go get -u github.com/alexellis/inlets
-cd $GOPATH/src/github.com/alexellis/inlets
-
-./inlets -server=false -remote=192.168.0.101:80 -upstream=http://127.0.0.1:3000
+./inlets -server=false \
+ -remote=192.168.0.101:80 \
+ -upstream=http://127.0.0.1:3000
 ```
 
-Finally with an example server running and a tunnel server and a tunnel client send a request to the public IP address i.e.:
+Replace the `-remote` with the address where your other machine is listening.
 
-You can also map to a DNS Host:
+We now have an example service running (hash-browns), a tunnel server and a tunnel client.
+
+So send a request to the public IP address or hostname:
 
 ```
 ./inlets -server=false -remote=192.168.0.101:80 -upstream  "gateway.mydomain.tk=http://127.0.0.1:3000"
 ```
 
 ```
+curl -d "hash this" http://192.168.0.101/hash -H "Host: gateway.mydomain.tk"
+# or
 curl -d "hash this" http://192.168.0.101/hash
+# or
+curl -d "hash this" http://gateway.mydomain.tk/hash
 ```
 
 You will see the traffic pass between the exit node / server and your development machine. You'll see the hash message appear in the logs as below:
@@ -110,13 +109,26 @@ You will see the traffic pass between the exit node / server and your developmen
 "hash this"
 ```
 
-Now check the metrics:
+Now check the metrics endpoint which is built-into the hash-browns example service:
 
 ```
 curl http://192.168.0.101/metrics | grep hash
 ```
 
-* Try something else
+## Development
+
+For development you will need Golang 1.10 or 1.11 on both the exit-node or server and the client.
+
+You can get the code like this:
+
+```bash
+go get -u github.com/alexellis/inlets
+cd $GOPATH/src/github.com/alexellis/inlets
+```
+
+Contributions are welcome. All commits must be signed-off with `git commit -s` to accept the [Developer Certificate of Origin](https://developercertificate.org).
+
+## Take things further
 
 You can expose an OpenFaaS or OpenFaaS Cloud deployment with `inlets` - just change `-upstream=http://127.0.0.1:3000` to `-upstream=http://127.0.0.1:8080` or `-upstream=http://127.0.0.1:31112`. You can even point at an IP address inside or outside your network for instance: `-upstream=http://192.168.0.101:8080`.
 
