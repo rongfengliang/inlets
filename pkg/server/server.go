@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alexellis/inlets/pkg/transport"
@@ -18,6 +19,7 @@ import (
 type Server struct {
 	GatewayTimeout time.Duration
 	Port           int
+	Token          string
 }
 
 // Serve traffic
@@ -26,7 +28,7 @@ func (s *Server) Serve() {
 	outgoing := make(chan *http.Request)
 
 	http.HandleFunc("/", proxyHandler(ch, outgoing, s.GatewayTimeout))
-	http.HandleFunc("/ws", serveWs(ch, outgoing))
+	http.HandleFunc("/tunnel", serveWs(ch, outgoing, s.Token))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", s.Port), nil); err != nil {
 		log.Fatal(err)
 	}
@@ -88,7 +90,7 @@ func proxyHandler(msg chan *http.Response, outgoing chan *http.Request, gatewayT
 	}
 }
 
-func serveWs(msg chan *http.Response, outgoing chan *http.Request) func(w http.ResponseWriter, r *http.Request) {
+func serveWs(msg chan *http.Response, outgoing chan *http.Request, token string) func(w http.ResponseWriter, r *http.Request) {
 
 	var upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -96,6 +98,24 @@ func serveWs(msg chan *http.Response, outgoing chan *http.Request) func(w http.R
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+
+		auth := r.Header.Get("Authorization")
+		valid := false
+		if len(token) == 0 {
+			valid = true
+		} else {
+			prefix := "Bearer "
+			if strings.HasPrefix(auth, prefix); len(auth) > len(prefix) && auth[len(prefix):] == token {
+				valid = true
+			}
+		}
+
+		if !valid {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`Send token in header Authorization: Bearer <token>`))
+			return
+		}
+
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			if _, ok := err.(websocket.HandshakeError); !ok {

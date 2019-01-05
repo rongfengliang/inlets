@@ -18,6 +18,8 @@ type Args struct {
 	Upstream          string
 	GatewayTimeoutRaw string
 	GatewayTimeout    time.Duration
+	Token             string
+	PrintServerToken  bool
 }
 
 func main() {
@@ -27,6 +29,8 @@ func main() {
 	flag.StringVar(&args.Remote, "remote", "127.0.0.1:8000", " server address i.e. 127.0.0.1:8000")
 	flag.StringVar(&args.Upstream, "upstream", "", "upstream server i.e. http://127.0.0.1:3000")
 	flag.StringVar(&args.GatewayTimeoutRaw, "gateway-timeout", "5s", "timeout for upstream gateway")
+	flag.StringVar(&args.Token, "token", "", "token for authentication")
+	flag.BoolVar(&args.PrintServerToken, "print-token", true, "prints the token in server mode")
 
 	flag.Parse()
 
@@ -47,6 +51,11 @@ func main() {
 	}
 
 	if args.Server {
+
+		if len(args.Token) > 0 && args.PrintServerToken {
+			log.Printf("Server token: %s", args.Token)
+		}
+
 		gatewayTimeout, gatewayTimeoutErr := time.ParseDuration(args.GatewayTimeoutRaw)
 		if gatewayTimeoutErr != nil {
 			fmt.Printf("%s\n", gatewayTimeoutErr)
@@ -61,12 +70,15 @@ func main() {
 		server := server.Server{
 			Port:           args.Port,
 			GatewayTimeout: args.GatewayTimeout,
+			Token:          args.Token,
 		}
 		server.Serve()
+
 	} else {
 		client := client.Client{
 			Remote:      args.Remote,
 			UpstreamMap: upstreamMap,
+			Token:       args.Token,
 		}
 
 		err := client.Connect()

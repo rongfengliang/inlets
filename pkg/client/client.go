@@ -23,6 +23,9 @@ type Client struct {
 
 	// Map of upstream servers dns.entry=http://ip:port
 	UpstreamMap map[string]string
+
+	// Token for authentication
+	Token string
 }
 
 // Connect connect and serve traffic through websocket
@@ -33,10 +36,12 @@ func (c *Client) Connect() error {
 		return http.ErrUseLastResponse
 	}
 
-	u := url.URL{Scheme: "ws", Host: c.Remote, Path: "/ws"}
+	u := url.URL{Scheme: "ws", Host: c.Remote, Path: "/tunnel"}
 	log.Printf("connecting to %s", u.String())
 
-	ws, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	ws, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{
+		"Authorization": []string{"Bearer " + c.Token},
+	})
 
 	if err != nil {
 		return err
