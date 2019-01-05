@@ -50,7 +50,9 @@ Binaries for Linux, Darwin (MacOS) and armhf are made available via the [release
 
 ## Test it out
 
-You will need Golang 1.10 or 1.11 on both the exit-node or server and the client.
+You can get a binary release from the [releases pages](https://github.com/alexellis/inlets/releases) and skip the installation of Go locally on both systems.
+
+For development you will need Golang 1.10 or 1.11 on both the exit-node or server and the client.
 
 * On the server or exit-node
 
@@ -152,7 +154,7 @@ spec:
     spec:
       containers:
       - name: inlets
-        image: alexellis2/inlets-runtime:0.3.0
+        image: alexellis2/inlets-runtime:0.4.0
         imagePullPolicy: Always
         command: ["./inlets"]
         args:
